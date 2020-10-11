@@ -4,12 +4,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+device = torch.device('cuda')
+
 
 class Critic(nn.Module):
-    def __init__(self, num_inputs):
+    def __init__(self, num_inputs, action_size):
         super(Critic, self).__init__()
 
-        self.linear1 = nn.Linear(num_inputs, 128)
+        self.linear1 = nn.Linear(num_inputs + action_size, 128)
         self.linear2 = nn.Linear(128, 128)
         self.linear3 = nn.Linear(128, 1)
 
@@ -36,9 +38,8 @@ class Actor(nn.Module):
         return x
 
     def get_action(self, state):
-        state = torch.from_numpy(state).float().to(device)
-        state = state.view(1, self.num_input)
-        action = self.forward(state)
+        x = state.view(1, self.num_input).to(device)
+        action = self.forward(x)
         return action.detach().cpu().numpy()
 
 
@@ -78,12 +79,6 @@ def train(critic, critic_target, actor, actor_target,
 
     state_batch, action_batch,\
         reward_batch, next_state_batch, done_batch = memory.sample(batch_size)
-
-    state_batch = state_batch.to(device)
-    next_state_batch = next_state_batch.to(device)
-    action_batch = action_batch.to(device).squeeze()
-    reward_batch = reward_batch.to(device)
-    done_batch = done_batch.to(device)
 
     actor_loss = critic(state_batch, actor(state_batch))
     actor_loss = -actor_loss.mean()

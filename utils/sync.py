@@ -1,4 +1,4 @@
-SOFT_TAU = 0.005
+SOFT_TAU = 0.01
 
 
 def soft_sync(net, target_net):
