@@ -27,7 +27,7 @@ env = gym.make('FetchReach-v1')
 # %%
 pre_training = list()
 pre_training.append(env.reset()['observation'])
-for _ in range(100):
+for _ in range(1000):
     status = env.reset()
     state = status['observation']
     done = False
@@ -121,29 +121,21 @@ def train_policy(act_net, crt_net, tgt_crt_net,
 
     reward_batch = torch.FloatTensor(
         reward_batch).to(device).unsqueeze(1)
-    reward_batch = - dist(next_state_batch, goal_batch)
 
     mask_batch = torch.BoolTensor(
         mask_batch).to(device).unsqueeze(1)
 
-    # state_batch, logvar = vae_model.encode(state_batch)
-    # state_batch, logvar = state_batch.detach(), logvar.detach()
-    # next_state_batch = vae_model.encode(next_state_batch)[0].detach()
+    state_batch, logvar = vae_model.encode(state_batch)
+    state_batch, logvar = state_batch.detach(), logvar.detach()
+    next_state_batch = vae_model.encode(next_state_batch)[0].detach()
 
-    # if np.random.rand() > 0.5:
-    #     goal_batch = vae_model.reparameterize(state_batch, logvar)
+    if np.random.rand() > 0.5:
+        goal_batch = vae_model.reparameterize(state_batch, logvar)
+
+    reward_batch = - dist(next_state_batch, goal_batch)
 
     state_batch = torch.cat((state_batch, goal_batch), 1)
     next_state_batch = torch.cat((next_state_batch, goal_batch), 1)
-    for i, (state, action, next_state, done) in enumerate(episode):
-        for t in np.random.choice(len(episode), 20):
-            s_hi = episode[t][-2]
-            s_hi, _ = vae_model.encode(
-                torch.FloatTensor(next_state).to(device))
-            s_hi = s_hi.detach().cpu().numpy()
-            mu, _ = vae_model.encode(torch.FloatTensor(state).to(device))
-            mu = mu.detach().cpu().numpy()
-            memory.push(mu, action, 0, s_hi, done, s_hi)
 
     with torch.no_grad():
         next_state_action, next_state_log_pi, _ = act_net.sample(
@@ -220,22 +212,21 @@ for epi in range(1000):
     state = env.reset()['observation']
     mu, logvar = vae_model.encode(torch.FloatTensor(state).to(device))
     mu, logvar = mu.detach(), logvar.detach()
-    zg = vae_model.reparameterize(mu, logvar)
+    zg = vae_model.reparameterize(mu, logvar).detach()
     done = False
     episode = list()
     epi_reward = 0
     while not done:
         to_fwd = torch.cat((mu, zg))
         action = select_action(policy, to_fwd)
-        action = noise.get_action(action, steps)
         next_state, reward, done, _ = env.step(action)
         next_state = next_state['observation']
-        if epi % 20 == 0:
-            env.render()
+        # if epi % 20 == 0:
+        #     env.render()
         next_mu, _ = vae_model.encode(torch.FloatTensor(next_state).to(device))
         next_mu = next_mu.detach()
-        memory.push(mu.cpu().numpy(), action, reward,
-                    next_mu.cpu().numpy(), done, zg.detach().cpu().numpy())
+        memory.push(state, action, reward,
+                    next_state, done, zg.cpu().numpy())
         episode.append((state, action, next_state, done))
 
         state = next_state
@@ -257,9 +248,7 @@ for epi in range(1000):
             s_hi, _ = vae_model.encode(
                 torch.FloatTensor(next_state).to(device))
             s_hi = s_hi.detach().cpu().numpy()
-            mu, _ = vae_model.encode(torch.FloatTensor(state).to(device))
-            mu = mu.detach().cpu().numpy()
-            memory.push(mu, action, 0, s_hi, done, s_hi)
+            memory.push(state, action, 0, next_state, done, s_hi)
 
     if epi % 10 == 0 and epi > 0:
         batches = [random.sample(data_vae, 128) for _ in range(10)]
