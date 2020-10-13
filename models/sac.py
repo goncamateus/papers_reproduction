@@ -54,14 +54,14 @@ class QNetwork(nn.Module):
         xu = torch.cat([state, action], 1)
 
         x1 = F.relu(self.linear1(xu))
-        x1 = F.relu(self.linear2(x1))
-        x1 = self.linear3(x1)
+        x2 = F.relu(self.linear2(x1))
+        x3 = self.linear3(x2)
 
-        x2 = F.relu(self.linear4(xu))
-        x2 = F.relu(self.linear5(x2))
-        x2 = self.linear6(x2)
+        x4 = F.relu(self.linear4(xu))
+        x5 = F.relu(self.linear5(x4))
+        x6 = self.linear6(x5)
 
-        return x1, x2
+        return x3, x6
 
 
 class GaussianPolicy(nn.Module):
@@ -87,26 +87,28 @@ class GaussianPolicy(nn.Module):
                 (action_space.high + action_space.low) / 2.)
 
     def forward(self, state):
-        x = F.relu(self.linear1(state))
-        x = F.relu(self.linear2(x))
-        mean = self.mean_linear(x)
-        log_std = self.log_std_linear(x)
+        x1 = F.relu(self.linear1(state))
+        x2 = F.relu(self.linear2(x1))
+        mean = self.mean_linear(x2)
+        log_std = self.log_std_linear(x2)
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
         return mean, log_std
 
     def sample(self, state):
-        mean, log_std = self.forward(state)
-        std = log_std.exp()
-        normal = Normal(mean, std)
-        x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
-        y_t = torch.tanh(x_t)
-        action = y_t * self.action_scale + self.action_bias
-        log_prob = normal.log_prob(x_t)
-        # Enforcing Action Bound
-        log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
-        log_prob = log_prob.sum(1, keepdim=True)
-        mean = torch.tanh(mean) * self.action_scale + self.action_bias
-        return action, log_prob, mean
+        with torch.autograd.set_detect_anomaly(True):
+            mean, log_std = self.forward(state)
+            std = log_std.exp()
+            normal = Normal(mean, std)
+            x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
+            y_t = torch.tanh(x_t)
+            action = y_t * self.action_scale + self.action_bias
+            log_prob = normal.log_prob(x_t)
+            # Enforcing Action Bound
+            log_prob = log_prob -\
+                torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
+            log_prob = log_prob.sum(1, keepdim=True)
+            mean = torch.tanh(mean) * self.action_scale + self.action_bias
+            return action, log_prob, mean
 
     def to(self, device):
         self.action_scale = self.action_scale.to(device)
